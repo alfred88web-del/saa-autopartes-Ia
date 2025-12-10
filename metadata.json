@@ -1,0 +1,5 @@
+{
+  "name": "SAA autoPartes AI",
+  "description": "Smart auto parts store powered by Gemini AI and Google Sheets.",
+  "requestFramePermissions": []
+}
