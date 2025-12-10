@@ -154,35 +154,39 @@ export const searchInventory = async (
     // Simular retardo de red
     await new Promise(resolve => setTimeout(resolve, 600));
 
-    // Filtrado local (Modo Demo mejorado)
+    // Filtrado local (Modo Demo mejorado para búsqueda Universal)
     return MOCK_INVENTORY.filter(product => {
-      const partName = criteria.partName?.toLowerCase() || "";
-      const make = criteria.make?.toLowerCase() || "";
-      const model = criteria.model?.toLowerCase() || "";
-      const category = criteria.category?.toLowerCase() || "";
+      const partName = (criteria.partName?.toLowerCase() || "").trim();
+      const partNameSingular = partName.replace(/es$/, "").replace(/s$/, ""); 
+      const make = (criteria.make?.toLowerCase() || "").trim();
+      const model = (criteria.model?.toLowerCase() || "").trim();
 
-      // 1. Coincidencia de Nombre o Categoría del Producto
-      // Si busco "Motor", debería traer cosas de la categoría Motor aunque no diga Motor en el nombre
-      const matchNameOrCategory = partName 
-        ? product.name.toLowerCase().includes(partName) || product.category.toLowerCase().includes(partName)
-        : true;
-      
-      // 2. Coincidencia de Marca
-      const matchMake = make
-        ? product.compatibleModels.some(m => m.toLowerCase().includes(make)) || product.compatibleModels.includes("Universal")
-        : true;
+      // Creamos un "blob" de texto del producto para buscar en todo a la vez
+      // Esto simula la lógica del nuevo Script de Google
+      const productBlob = (
+        product.id + " " + 
+        product.name + " " + 
+        product.compatibleModels.join(" ") + " " + 
+        product.category + " " +
+        product.description
+      ).toLowerCase();
 
-      // 3. Coincidencia de Modelo
-      const matchModel = model
-        ? product.compatibleModels.some(m => m.toLowerCase().includes(model)) || product.compatibleModels.includes("Universal")
-        : true;
-      
-      // 4. Coincidencia explícita de categoría si la IA la detectó
-      const matchCategoryExplicit = category
-        ? product.category.toLowerCase().includes(category)
+      // 1. Verificamos si el término principal (partName) está en CUALQUIER lugar
+      const matchesPart = partName 
+        ? productBlob.includes(partName) || productBlob.includes(partNameSingular)
         : true;
 
-      return matchNameOrCategory && (matchMake || matchModel) && matchCategoryExplicit;
+      // 2. Verificamos Marca (si existe)
+      const matchesMake = make 
+        ? productBlob.includes(make)
+        : true;
+
+      // 3. Verificamos Modelo (si existe)
+      const matchesModel = model 
+        ? productBlob.includes(model)
+        : true;
+
+      return matchesPart && matchesMake && matchesModel;
     });
   } else {
     // Conexión Real a Google Apps Script

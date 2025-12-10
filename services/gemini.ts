@@ -30,7 +30,7 @@ export const parseUserQuery = async (userText: string, apiKey: string): Promise<
   const schema: Schema = {
     type: Type.OBJECT,
     properties: {
-      partName: { type: Type.STRING, description: "The specific name of the auto part requested (e.g., 'amortiguador', 'aceite', 'bujía')." },
+      partName: { type: Type.STRING, description: "The specific name OR CODE of the auto part. If the user provides a number (e.g. 12345), put it here. Also normalize nouns to SINGULAR form (e.g. 'amortiguadores' -> 'amortiguador')." },
       make: { type: Type.STRING, description: "Car brand/make (e.g., Toyota, Ford)." },
       model: { type: Type.STRING, description: "Car model (e.g., Corolla, Focus)." },
       year: { type: Type.STRING, description: "Car year." },
@@ -44,12 +44,14 @@ export const parseUserQuery = async (userText: string, apiKey: string): Promise<
       model: modelId,
       contents: `You are an auto parts expert assistant. 
       Analyze the following user query and extract technical search criteria to query a database.
-      If information is missing, leave it null/undefined.
+      IMPORTANT: 
+      1. Normalize the 'partName' to be SINGULAR.
+      2. If the user searches for a CODE or NUMBER, include it in 'partName'.
       User Query: "${userText}"`,
       config: {
         responseMimeType: "application/json",
         responseSchema: schema,
-        systemInstruction: "Extract auto part search parameters from Spanish or English text.",
+        systemInstruction: "Extract auto part search parameters. Treat part codes/IDs as partName. Always return part names in singular.",
       }
     });
 

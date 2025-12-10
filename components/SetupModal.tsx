@@ -21,75 +21,77 @@ export const SetupModal: React.FC<SetupModalProps> = ({ isOpen, onClose, config,
   const GAS_CODE = `function doGet(e) {
   // 1. Conexión con la hoja
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  
-  // MODIFICADO: Busca específicamente la hoja llamada "bat rep"
   var sheet = ss.getSheetByName("bat rep");
   
-  // Validación de seguridad por si el nombre está mal escrito en el Sheet
   if (!sheet) {
      return ContentService.createTextOutput(JSON.stringify([{
        id: "ERR",
-       name: "ERROR CRÍTICO: No se encontró la hoja 'bat rep'. Revisa el nombre en tu Excel.",
-       price: 0,
-       stock: 0,
-       compatibleModels: [],
-       imageUrl: "",
-       category: "Error"
+       name: "ERROR: No se encuentra la hoja 'bat rep'",
+       price: 0, stock: 0, compatibleModels: [], imageUrl: "", category: "Error"
      }])).setMimeType(ContentService.MimeType.JSON);
   }
 
   var data = sheet.getDataRange().getValues();
-  
-  // Asumimos que la fila 1 son encabezados
-  var rows = data.slice(1);
+  var rows = data.slice(1); // Ignorar encabezados
 
-  // 2. Mapeo de Columnas (NUEVA ESTRUCTURA)
+  // 2. Mapeo de Columnas
   // 0:Codigo, 1:Marca, 2:Repuesto, 3:Precio, 4:Stok, 5:Imagen
   var products = rows.filter(function(row) { return row[0] !== "" }).map(function(row) {
+    var marca = String(row[1]).trim();
+    var repuesto = String(row[2]).trim();
+    var codigo = String(row[0]).trim();
+    
     return {
-      id: String(row[0]),
-      // "Marca" se usa como modelos compatibles para la búsqueda
-      compatibleModels: String(row[1]).split(',').map(function(s) { return s.trim(); }), 
-      name: String(row[2]), // "Repuesto" es el nombre
-      category: "General",  // Categoría por defecto (ya que no hay columna)
+      id: codigo,
+      compatibleModels: marca.split(',').map(function(s) { return s.trim(); }), 
+      name: repuesto,
+      category: "General",
       price: Number(row[3]),
       stock: Number(row[4]),
       imageUrl: String(row[5]),
-      description: String(row[2]) + " para " + String(row[1]) // Descripción auto-generada
+      // Creamos un campo de búsqueda masivo que incluye TODO
+      searchBlob: (codigo + " " + repuesto + " " + marca).toLowerCase() 
     };
   });
 
-  // 3. Filtrado según parámetros de la URL (Inteligencia Artificial)
+  // 3. Filtrado Inteligente
   var p = e.parameter;
 
-  // Filtrar por nombre del repuesto
+  // A) Filtro Principal (Nombre, Código, Categoría)
   if (p.part) {
-    var term = p.part.toLowerCase();
-    products = products.filter(function(item) { 
-      return item.name.toLowerCase().includes(term);
+    var term = p.part.toLowerCase().trim();
+    var termSingular = term.replace(/es$/, "").replace(/s$/, ""); // "amortiguadores" -> "amortiguador"
+    
+    products = products.filter(function(item) {
+      // Buscamos en el 'blob' que contiene Codigo, Nombre y Marca
+      return item.searchBlob.includes(term) || item.searchBlob.includes(termSingular);
     });
   }
 
-  // Filtrar por Marca (busca en la columna Marca)
+  // B) Filtro por Marca/Vehículo (si la IA lo detectó separado)
   if (p.make) {
     var make = p.make.toLowerCase();
     products = products.filter(function(item) { 
-      return item.compatibleModels.some(function(m) { return m.toLowerCase().includes(make); });
+      return item.searchBlob.includes(make);
     });
   }
   
-  // Filtrar por Modelo (si la IA detecta modelo, buscamos en Marca o Nombre)
+  // C) Filtro por Modelo
   if (p.model) {
     var model = p.model.toLowerCase();
     products = products.filter(function(item) { 
-       var inName = item.name.toLowerCase().includes(model);
-       var inMake = item.compatibleModels.some(function(m) { return m.toLowerCase().includes(model); });
-       return inName || inMake;
+       return item.searchBlob.includes(model);
     });
   }
 
-  // 4. Devolver JSON
-  return ContentService.createTextOutput(JSON.stringify(products))
+  // Limpiamos el campo 'searchBlob' antes de enviar para ahorrar datos
+  var result = products.map(function(p) {
+    var clean = { ...p };
+    delete clean.searchBlob;
+    return clean;
+  });
+
+  return ContentService.createTextOutput(JSON.stringify(result))
     .setMimeType(ContentService.MimeType.JSON);
 }`;
 
