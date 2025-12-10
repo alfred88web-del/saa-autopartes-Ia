@@ -7,6 +7,8 @@ import { ChatMessage, Product, AppConfig } from './types';
 import { parseUserQuery, generateSummary } from './services/gemini';
 import { searchInventory } from './services/inventory';
 
+const STORAGE_KEY = 'autopartes_config_v1';
+
 export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -26,12 +28,22 @@ export default function App() {
   // Settings
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   
-  // Default config
-  const [config, setConfig] = useState<AppConfig>({
-    useMockData: true, 
-    appsScriptUrl: '', 
-    googleApiKey: '',  
-    whatsappNumber: '' 
+  // Default config with Persistence Logic
+  const [config, setConfig] = useState<AppConfig>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {
+      console.error("Error loading config from storage", e);
+    }
+    return {
+      useMockData: true, 
+      appsScriptUrl: '', 
+      googleApiKey: '',  
+      whatsappNumber: '' 
+    };
   });
 
   // Check for Magic Link config on Mount
@@ -46,11 +58,17 @@ export default function App() {
         
         if (parsedConfig && typeof parsedConfig === 'object') {
             setConfig(parsedConfig);
+            // Persist Magic Link config immediately
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(parsedConfig));
+            
+            // Clean URL to avoid re-parsing on reload
+            window.history.replaceState({}, document.title, window.location.pathname);
+
             if (parsedConfig.appsScriptUrl || parsedConfig.googleApiKey) {
                 setMessages(prev => [{
                     id: 'sys_connect',
                     role: 'system',
-                    text: '✅ Configuración cargada: API Key, WhatsApp y Base de Datos conectadas.',
+                    text: '✅ Configuración cargada y guardada automáticamente.',
                     timestamp: new Date()
                 }, ...prev]);
             }
@@ -132,12 +150,14 @@ export default function App() {
 
   const saveConfig = (newConfig: AppConfig) => {
     setConfig(newConfig);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfig)); // Persist to LocalStorage
     setIsSettingsOpen(false);
+    
     if (newConfig.appsScriptUrl && !newConfig.useMockData) {
          setMessages(prev => [...prev, {
             id: Date.now().toString(),
             role: 'system',
-            text: 'Configuración actualizada.',
+            text: 'Configuración actualizada y guardada en el navegador.',
             timestamp: new Date()
           }]);
     }
