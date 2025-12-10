@@ -19,28 +19,29 @@ export const SetupModal: React.FC<SetupModalProps> = ({ isOpen, onClose, config,
   const HEADERS = "Codigo, Marca, Repuesto, Precio, Stok, Imagen";
 
   const GAS_CODE = `function doGet(e) {
-  // 1. Conexión con la hoja
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var sheet = ss.getSheetByName("bat rep");
   
   if (!sheet) {
      return ContentService.createTextOutput(JSON.stringify([{
-       id: "ERR",
-       name: "ERROR: No se encuentra la hoja 'bat rep'",
-       price: 0, stock: 0, compatibleModels: [], imageUrl: "", category: "Error"
+       id: "ERR", name: "ERROR: No 'bat rep' sheet", price: 0, stock: 0, compatibleModels: [], imageUrl: "", category: "Error"
      }])).setMimeType(ContentService.MimeType.JSON);
   }
 
   var data = sheet.getDataRange().getValues();
-  var rows = data.slice(1); // Ignorar encabezados
+  var rows = data.slice(1); 
 
-  // 2. Mapeo de Columnas
-  // 0:Codigo, 1:Marca, 2:Repuesto, 3:Precio, 4:Stok, 5:Imagen
+  // 1. Preparar Base de Datos
   var products = rows.filter(function(row) { return row[0] !== "" }).map(function(row) {
+    var codigo = String(row[0]).trim();
     var marca = String(row[1]).trim();
     var repuesto = String(row[2]).trim();
-    var codigo = String(row[0]).trim();
     
+    // Unimos todo el texto relevante en un solo bloque para buscar ahí
+    var searchBlob = (codigo + " " + repuesto + " " + marca).toLowerCase();
+    // Quitamos acentos para facilitar búsqueda
+    searchBlob = searchBlob.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+
     return {
       id: codigo,
       compatibleModels: marca.split(',').map(function(s) { return s.trim(); }), 
@@ -49,42 +50,39 @@ export const SetupModal: React.FC<SetupModalProps> = ({ isOpen, onClose, config,
       price: Number(row[3]),
       stock: Number(row[4]),
       imageUrl: String(row[5]),
-      // Creamos un campo de búsqueda masivo que incluye TODO
-      searchBlob: (codigo + " " + repuesto + " " + marca).toLowerCase() 
+      searchBlob: searchBlob
     };
   });
 
-  // 3. Filtrado Inteligente
+  // 2. Obtener términos de búsqueda de la IA
   var p = e.parameter;
-
-  // A) Filtro Principal (Nombre, Código, Categoría)
-  if (p.part) {
-    var term = p.part.toLowerCase().trim();
-    var termSingular = term.replace(/es$/, "").replace(/s$/, ""); // "amortiguadores" -> "amortiguador"
-    
-    products = products.filter(function(item) {
-      // Buscamos en el 'blob' que contiene Codigo, Nombre y Marca
-      return item.searchBlob.includes(term) || item.searchBlob.includes(termSingular);
-    });
-  }
-
-  // B) Filtro por Marca/Vehículo (si la IA lo detectó separado)
-  if (p.make) {
-    var make = p.make.toLowerCase();
-    products = products.filter(function(item) { 
-      return item.searchBlob.includes(make);
-    });
-  }
   
-  // C) Filtro por Modelo
-  if (p.model) {
-    var model = p.model.toLowerCase();
-    products = products.filter(function(item) { 
-       return item.searchBlob.includes(model);
+  // Juntamos todos los criterios que nos dio la IA en una sola cadena de búsqueda
+  // Ejemplo: part="amortiguador", model="corsa" -> "amortiguador corsa"
+  var query = (p.part || "") + " " + (p.make || "") + " " + (p.model || "") + " " + (p.year || "");
+  query = query.toLowerCase().trim();
+  
+  // Normalizar query (quitar acentos)
+  query = query.normalize("NFD").replace(/[\\u0300-\\u036f]/g, "");
+
+  // 3. LOGICA DE BÚSQUEDA TIPO "GOOGLE" (Tokenizada)
+  if (query.length > 0) {
+    // Dividimos en palabras: "amortiguador", "trasero", "corsa"
+    var tokens = query.split(" ").filter(function(t) { return t.length > 1; }); // Ignoramos letras sueltas
+
+    products = products.filter(function(item) {
+      // El producto debe contener TODAS las palabras clave (tokens)
+      return tokens.every(function(token) {
+        // Truco: Si la palabra termina en 's' o 'es', intentamos buscar la raíz
+        // Ej: si busco "traseros", aceptamos que encuentre "trasero"
+        var tokenSingular = token.replace(/es$/, "").replace(/s$/, "");
+        
+        return item.searchBlob.includes(token) || item.searchBlob.includes(tokenSingular);
+      });
     });
   }
 
-  // Limpiamos el campo 'searchBlob' antes de enviar para ahorrar datos
+  // Limpieza antes de enviar
   var result = products.map(function(p) {
     var clean = { ...p };
     delete clean.searchBlob;
@@ -96,11 +94,9 @@ export const SetupModal: React.FC<SetupModalProps> = ({ isOpen, onClose, config,
 }`;
 
   const generateMagicLink = () => {
-    // Encode config to Base64
     const jsonStr = JSON.stringify(localConfig);
     const encoded = btoa(jsonStr);
     const url = `${window.location.origin}${window.location.pathname}?cfg=${encoded}`;
-    
     navigator.clipboard.writeText(url);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 3000);

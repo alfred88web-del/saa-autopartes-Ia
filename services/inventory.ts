@@ -154,49 +154,45 @@ export const searchInventory = async (
     // Simular retardo de red
     await new Promise(resolve => setTimeout(resolve, 600));
 
-    // Filtrado local (Modo Demo mejorado para búsqueda Universal)
-    return MOCK_INVENTORY.filter(product => {
-      const partName = (criteria.partName?.toLowerCase() || "").trim();
-      const partNameSingular = partName.replace(/es$/, "").replace(/s$/, ""); 
-      const make = (criteria.make?.toLowerCase() || "").trim();
-      const model = (criteria.model?.toLowerCase() || "").trim();
+    // LOGICA DE BÚSQUEDA TIPO GOOGLE PARA EL MOCK
+    // Unimos todos los criterios de la IA en una sola frase de búsqueda
+    const query = [criteria.partName, criteria.make, criteria.model, criteria.year]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // Quitar acentos
 
-      // Creamos un "blob" de texto del producto para buscar en todo a la vez
-      // Esto simula la lógica del nuevo Script de Google
+    if (!query.trim()) return [];
+
+    // Dividimos en palabras (Tokens)
+    const tokens = query.split(" ").filter(t => t.length > 1);
+
+    return MOCK_INVENTORY.filter(product => {
       const productBlob = (
         product.id + " " + 
         product.name + " " + 
         product.compatibleModels.join(" ") + " " + 
         product.category + " " +
         product.description
-      ).toLowerCase();
+      ).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-      // 1. Verificamos si el término principal (partName) está en CUALQUIER lugar
-      const matchesPart = partName 
-        ? productBlob.includes(partName) || productBlob.includes(partNameSingular)
-        : true;
-
-      // 2. Verificamos Marca (si existe)
-      const matchesMake = make 
-        ? productBlob.includes(make)
-        : true;
-
-      // 3. Verificamos Modelo (si existe)
-      const matchesModel = model 
-        ? productBlob.includes(model)
-        : true;
-
-      return matchesPart && matchesMake && matchesModel;
+      // Verificamos que el producto contenga TODAS las palabras clave
+      return tokens.every(token => {
+        const tokenSingular = token.replace(/es$/, "").replace(/s$/, "");
+        return productBlob.includes(token) || productBlob.includes(tokenSingular);
+      });
     });
+
   } else {
     // Conexión Real a Google Apps Script
     try {
       const url = new URL(appsScriptUrl);
       
-      // Mapeamos los criterios de la IA a los parámetros que espera el script
+      // Enviamos todo, el Script se encargará de unirlo y tokenizarlo
       if (criteria.partName) url.searchParams.append("part", criteria.partName);
       if (criteria.make) url.searchParams.append("make", criteria.make);
       if (criteria.model) url.searchParams.append("model", criteria.model);
+      if (criteria.year) url.searchParams.append("year", criteria.year);
 
       const response = await fetch(url.toString());
 
