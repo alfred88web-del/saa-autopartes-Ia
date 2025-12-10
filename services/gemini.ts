@@ -13,19 +13,55 @@ const getEnvApiKey = () => {
   }
 };
 
+// Helper to clean Markdown JSON code blocks (e.g. ```json ... ```)
+const cleanJson = (text: string) => {
+  if (!text) return "{}";
+  let clean = text.replace(/```json/g, "").replace(/```/g, "");
+  return clean.trim();
+};
+
+// Local detection for basic interactions (Works offline / without API Key / Fast fallback)
+const detectBasicIntent = (text: string): SearchCriteria | null => {
+  const t = text.toLowerCase().trim();
+  
+  // 1. Greetings / Small talk (Strict match or starts with greeting)
+  // Matches: "Hola", "Hola!", "Buenas tardes", "Gracias"
+  if (/^(hola|buen|buenas|hi|hello|gracias|chau)([\s\W]*)$/.test(t)) {
+    return { 
+      intent: 'CHAT', 
+      conversationalReply: "¡Hola! 👋 Es un gusto saludarte. Soy tu asistente inteligente. Escribe el nombre del repuesto que necesitas (ej: 'Bomba de agua para Corsa') y buscaré el mejor precio para ti." 
+    };
+  }
+
+  // 2. Agent / Wholesale / Help (Keywords)
+  if (t.includes('mayor') || t.includes('gremio') || t.includes('distribui') || t.includes('asesor') || t.includes('humano')) {
+    return {
+      intent: 'AGENT',
+      conversationalReply: "Entendido. Para atención al gremio, compras mayoristas o consultas administrativas, te pongo en contacto directo con un asesor comercial."
+    };
+  }
+
+  return null;
+};
+
 /**
  * Parses user natural language into structured search criteria OR a conversational intent.
  */
 export const parseUserQuery = async (userText: string, apiKey: string): Promise<SearchCriteria> => {
-  // Use provided key or fallback to env var (safely checked)
+  // 1. Try Local Detection FIRST (Fast response, works without API Key)
+  const localIntent = detectBasicIntent(userText);
+  
+  // Use provided key or fallback to env var
   const key = apiKey || getEnvApiKey();
   
   if (!key) {
     console.warn("API Key missing");
-    // Fallback simple search if no key
+    // If we detected a greeting locally, return it. Otherwise fallback to SEARCH.
+    if (localIntent) return localIntent;
     return { intent: 'SEARCH', partName: userText }; 
   }
 
+  // 2. If no local intent detected (or we want AI to handle complex queries), use Gemini
   const ai = new GoogleGenAI({ apiKey: key });
 
   const schema: Schema = {
@@ -75,12 +111,17 @@ export const parseUserQuery = async (userText: string, apiKey: string): Promise<
     });
 
     if (response.text) {
-      return JSON.parse(response.text) as SearchCriteria;
+      // Use cleanJson to handle potential Markdown wrapping
+      return JSON.parse(cleanJson(response.text)) as SearchCriteria;
     }
-    return { intent: 'SEARCH', partName: userText };
+    
+    // Fallback if AI returns empty text
+    return localIntent || { intent: 'SEARCH', partName: userText };
+
   } catch (error) {
     console.error("Gemini parse error:", error);
-    return { intent: 'SEARCH', partName: userText }; // Fallback
+    // Fallback to local intent if AI fails, otherwise search
+    return localIntent || { intent: 'SEARCH', partName: userText };
   }
 };
 
