@@ -8,6 +8,11 @@ interface ProductGridProps {
 }
 
 export const ProductGrid: React.FC<ProductGridProps> = ({ products, isLoading, onAddToCart }) => {
+  // Función para manejar errores de imagen
+  const handleImageError = (e: React.SyntheticEvent<HTMLImageElement, Event>) => {
+    e.currentTarget.src = "https://placehold.co/400x400/1e293b/cbd5e1?text=Sin+Imagen";
+  };
+
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
@@ -54,6 +59,7 @@ export const ProductGrid: React.FC<ProductGridProps> = ({ products, isLoading, o
             <img 
               src={product.imageUrl} 
               alt={product.name} 
+              onError={handleImageError}
               className="w-full h-full object-cover"
             />
             <div className="absolute top-2 left-2 md:top-3 md:right-3 md:left-auto">
