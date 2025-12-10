@@ -1,3 +1,4 @@
+
 export interface Product {
   id: string;
   name: string;
@@ -11,6 +12,8 @@ export interface Product {
 }
 
 export interface SearchCriteria {
+  intent?: 'SEARCH' | 'CHAT' | 'AGENT';
+  conversationalReply?: string;
   partName?: string;
   make?: string;
   model?: string;
@@ -24,6 +27,8 @@ export interface ChatMessage {
   text: string;
   timestamp: Date;
   isThinking?: boolean;
+  actionLabel?: string;
+  actionLink?: string;
 }
 
 export interface AppConfig {

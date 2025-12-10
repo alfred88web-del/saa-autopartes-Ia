@@ -14,7 +14,7 @@ const getEnvApiKey = () => {
 };
 
 /**
- * Parses user natural language into structured search criteria.
+ * Parses user natural language into structured search criteria OR a conversational intent.
  */
 export const parseUserQuery = async (userText: string, apiKey: string): Promise<SearchCriteria> => {
   // Use provided key or fallback to env var (safely checked)
@@ -22,7 +22,8 @@ export const parseUserQuery = async (userText: string, apiKey: string): Promise<
   
   if (!key) {
     console.warn("API Key missing");
-    return { partName: userText }; // Fallback simple search
+    // Fallback simple search if no key
+    return { intent: 'SEARCH', partName: userText }; 
   }
 
   const ai = new GoogleGenAI({ apiKey: key });
@@ -30,38 +31,56 @@ export const parseUserQuery = async (userText: string, apiKey: string): Promise<
   const schema: Schema = {
     type: Type.OBJECT,
     properties: {
-      partName: { type: Type.STRING, description: "The specific name OR CODE of the auto part. If the user provides a number (e.g. 12345), put it here. Also normalize nouns to SINGULAR form (e.g. 'amortiguadores' -> 'amortiguador')." },
+      intent: { 
+        type: Type.STRING, 
+        enum: ["SEARCH", "CHAT", "AGENT"], 
+        description: "SEARCH: User looking for specific parts. CHAT: Greetings/small talk. AGENT: Wholesale (mayorista), bulk buying, company info, address, or complex questions." 
+      },
+      conversationalReply: {
+        type: Type.STRING,
+        description: "For CHAT or AGENT intents, write a polite Spanish response. For AGENT, invite them to contact support."
+      },
+      partName: { type: Type.STRING, description: "The specific name OR CODE of the auto part. Normalize to SINGULAR." },
       make: { type: Type.STRING, description: "Car brand/make (e.g., Toyota, Ford)." },
       model: { type: Type.STRING, description: "Car model (e.g., Corolla, Focus)." },
       year: { type: Type.STRING, description: "Car year." },
-      category: { type: Type.STRING, description: "General category (Motor, Suspensión, Frenos, Interior, Exterior)." }
+      category: { type: Type.STRING, description: "General category." }
     },
-    required: ["partName"],
+    required: ["intent"],
   };
 
   try {
     const response = await ai.models.generateContent({
       model: modelId,
-      contents: `You are an auto parts expert assistant. 
-      Analyze the following user query and extract technical search criteria to query a database.
-      IMPORTANT: 
-      1. Normalize the 'partName' to be SINGULAR.
-      2. If the user searches for a CODE or NUMBER, include it in 'partName'.
-      User Query: "${userText}"`,
+      contents: `You are an expert auto parts store assistant.
+      Analyze the user input: "${userText}"
+      
+      Rules:
+      1. **SEARCH**: If user asks for a part, price, stock, or compatibility (e.g., "bujias para gol").
+      2. **CHAT**: If user says "Hola", "Gracias", or small talk.
+      3. **AGENT**: If user asks for:
+         - Wholesale prices ("precio al mayor", "por mayor", "gremio").
+         - Becoming a distributor.
+         - Company address or specific contact info.
+         - Complex mechanical advice not related to finding a part.
+         - "Hablar con alguien" or "Soporte".
+      
+      Output JSON with the correct intent. If AGENT, write a polite message in 'conversationalReply' saying you can help connect them with an advisor.
+      `,
       config: {
         responseMimeType: "application/json",
         responseSchema: schema,
-        systemInstruction: "Extract auto part search parameters. Treat part codes/IDs as partName. Always return part names in singular.",
+        systemInstruction: "You are a smart assistant. Distinguish between Product Search, Small Talk, and requests requiring Human Agent (Wholesale/Info).",
       }
     });
 
     if (response.text) {
       return JSON.parse(response.text) as SearchCriteria;
     }
-    return {};
+    return { intent: 'SEARCH', partName: userText };
   } catch (error) {
     console.error("Gemini parse error:", error);
-    return { partName: userText }; // Fallback
+    return { intent: 'SEARCH', partName: userText }; // Fallback
   }
 };
 
@@ -81,8 +100,10 @@ export const generateSummary = async (query: string, resultCount: number, criter
       Extracted criteria: ${JSON.stringify(criteria)}.
       Database found: ${resultCount} products.
       
-      Generate a very short, friendly, helpful response in Spanish telling the user what was found. 
-      If 0 results, suggest they check the model year or ask for a different part.`,
+      Generate a very short, friendly, professional response in Spanish summarizing the results. 
+      - If found > 0: Say something like "Encontré estas opciones para [coche/repuesto]..."
+      - If found 0: Apologize and suggest they check the year/model or ask for a generic part.
+      `,
     });
     return response.text || `He encontrado ${resultCount} productos.`;
   } catch (e) {

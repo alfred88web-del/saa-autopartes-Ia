@@ -14,7 +14,7 @@ export default function App() {
     {
       id: 'welcome',
       role: 'model',
-      text: '¡Hola! Soy tu experto en repuestos. ¿Qué estás buscando hoy? (Ej: "Pastillas de freno para Hilux")',
+      text: '¡Hola! 👋 Soy tu asistente experto. Conmigo, encontrar y comprar el repuesto exacto es más fácil y rápido que nunca. Simplemente dime qué buscas y para qué auto, ¡y yo me encargo del resto! 🚗💨',
       timestamp: new Date()
     }
   ]);
@@ -93,21 +93,54 @@ export default function App() {
     };
     setMessages(prev => [...prev, userMsg]);
     setIsProcessing(true);
-    // On mobile, keep user on chat while "thinking"
     
     try {
+      // 1. Determine Intent (Chat, Search, or Agent Handoff)
       const criteria = await parseUserQuery(text, config.googleApiKey);
       console.log("AI Extracted Criteria:", criteria);
 
+      // 2. CASE: AGENT (Wholesale, Company Info, Special Requests)
+      if (criteria.intent === 'AGENT') {
+         const replyText = criteria.conversationalReply || "Para esa información, por favor contacta a un asesor directamente.";
+         const phone = config.whatsappNumber || "5490000000000";
+         const waUrl = `https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent("Hola, tengo una consulta sobre: " + text)}`;
+
+         setMessages(prev => [...prev, {
+            id: (Date.now() + 1).toString(),
+            role: 'model',
+            text: replyText,
+            timestamp: new Date(),
+            actionLabel: "Contactar por WhatsApp",
+            actionLink: waUrl
+         }]);
+         setIsProcessing(false);
+         return; // EXIT EARLY
+      }
+
+      // 3. CASE: CHAT - Just reply, do not search DB
+      if (criteria.intent === 'CHAT') {
+        const replyText = criteria.conversationalReply || "¡Hola! ¿En qué puedo ayudarte con tu auto hoy?";
+        
+        setMessages(prev => [...prev, {
+            id: (Date.now() + 1).toString(),
+            role: 'model',
+            text: replyText,
+            timestamp: new Date()
+        }]);
+        setIsProcessing(false);
+        return; // EXIT EARLY
+      }
+
+      // 4. CASE: SEARCH - Query Inventory
       const foundProducts = await searchInventory(criteria, config.useMockData, config.appsScriptUrl);
       setProducts(foundProducts);
 
-      // Auto-switch to results on mobile if products found
+      // Auto-switch to results on mobile ONLY if products found
       if (foundProducts.length > 0) {
-        // Pequeño delay para que se sienta natural
         setTimeout(() => setActiveTab('results'), 500);
       }
 
+      // Generate context-aware summary based on DB results
       const summaryText = await generateSummary(text, foundProducts.length, criteria, config.googleApiKey);
 
       const aiMsg: ChatMessage = {
@@ -123,7 +156,7 @@ export default function App() {
       const errorMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: "Tuve un problema de conexión. Por favor intenta de nuevo.",
+        text: "Tuve un pequeño problema técnico. ¿Podrías repetirme qué repuesto buscas?",
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMsg]);
