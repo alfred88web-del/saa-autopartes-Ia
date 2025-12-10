@@ -46,11 +46,11 @@ export default function App() {
         
         if (parsedConfig && typeof parsedConfig === 'object') {
             setConfig(parsedConfig);
-            if (parsedConfig.appsScriptUrl) {
+            if (parsedConfig.appsScriptUrl || parsedConfig.googleApiKey) {
                 setMessages(prev => [{
                     id: 'sys_connect',
                     role: 'system',
-                    text: '✅ Sistema conectado correctamente.',
+                    text: '✅ Configuración cargada: API Key, WhatsApp y Base de Datos conectadas.',
                     timestamp: new Date()
                 }, ...prev]);
             }

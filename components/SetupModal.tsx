@@ -19,8 +19,25 @@ export const SetupModal: React.FC<SetupModalProps> = ({ isOpen, onClose, config,
   const HEADERS = "Codigo, Marca, Repuesto, Precio, Stok, Imagen";
 
   const GAS_CODE = `function doGet(e) {
-  // 1. Conexión con la hoja activa
-  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  // 1. Conexión con la hoja
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // MODIFICADO: Busca específicamente la hoja llamada "bat rep"
+  var sheet = ss.getSheetByName("bat rep");
+  
+  // Validación de seguridad por si el nombre está mal escrito en el Sheet
+  if (!sheet) {
+     return ContentService.createTextOutput(JSON.stringify([{
+       id: "ERR",
+       name: "ERROR CRÍTICO: No se encontró la hoja 'bat rep'. Revisa el nombre en tu Excel.",
+       price: 0,
+       stock: 0,
+       compatibleModels: [],
+       imageUrl: "",
+       category: "Error"
+     }])).setMimeType(ContentService.MimeType.JSON);
+  }
+
   var data = sheet.getDataRange().getValues();
   
   // Asumimos que la fila 1 son encabezados
@@ -154,7 +171,9 @@ export const SetupModal: React.FC<SetupModalProps> = ({ isOpen, onClose, config,
            <div className="bg-gradient-to-r from-purple-900/30 to-blue-900/30 p-4 rounded-xl border border-white/10 flex flex-col md:flex-row items-center justify-between gap-4">
               <div className="text-sm">
                 <p className="text-white font-semibold">🔗 Link Mágico de Acceso</p>
-                <p className="text-slate-400 text-xs">Genera una URL con esta configuración incrustada para compartir o guardar.</p>
+                <p className="text-slate-400 text-xs mt-1">
+                  Genera una URL que incluye tu <strong className="text-purple-300">API Key</strong>, <strong className="text-green-300">WhatsApp</strong> y <strong className="text-blue-300">Script URL</strong> para no tener que escribirlos de nuevo.
+                </p>
               </div>
               <button 
                 onClick={generateMagicLink}
@@ -199,6 +218,7 @@ export const SetupModal: React.FC<SetupModalProps> = ({ isOpen, onClose, config,
                      <div className="bg-slate-800 p-2 rounded text-xs font-mono text-green-400 overflow-x-auto select-all">
                        {HEADERS}
                      </div>
+                     <p className="text-slate-400 mb-2 mt-2">La hoja DEBE llamarse: <strong className="text-white">bat rep</strong></p>
                    </div>
 
                    <div>
