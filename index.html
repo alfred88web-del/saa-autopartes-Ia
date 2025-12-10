@@ -2,8 +2,9 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>AutoPartes AI - Repuestos Inteligentes</title>
+    <!-- Mantenemos Tailwind vía CDN para simplificar la configuración de estilos -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
@@ -17,6 +18,8 @@
         background-attachment: fixed;
         background-size: cover;
         color: #e2e8f0;
+        /* Evitar rebote elástico en iOS */
+        overscroll-behavior-y: none;
       }
       
       /* Modern Scrollbar */
@@ -50,20 +53,27 @@
           transform: translateY(0);
         }
       }
+
+      /* Utilidad para respetar el área segura del iPhone (la barra negra de abajo) */
+      .pb-safe {
+        padding-bottom: env(safe-area-inset-bottom);
+      }
     </style>
   <script type="importmap">
 {
   "imports": {
     "react": "https://aistudiocdn.com/react@^19.2.1",
-    "react-dom/client": "https://aistudiocdn.com/react-dom@^19.2.1/client",
     "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.1/",
     "react/": "https://aistudiocdn.com/react@^19.2.1/",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.32.0"
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.32.0",
+    "vite": "https://aistudiocdn.com/vite@^7.2.7",
+    "@vitejs/plugin-react": "https://aistudiocdn.com/@vitejs/plugin-react@^5.1.2"
   }
 }
 </script>
 </head>
   <body>
     <div id="root" class="h-screen w-full"></div>
+    <script type="module" src="/index.tsx"></script>
   </body>
 </html>
