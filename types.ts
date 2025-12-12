@@ -14,6 +14,7 @@ export interface Product {
 export interface SearchCriteria {
   intent?: 'SEARCH' | 'CHAT' | 'AGENT';
   conversationalReply?: string;
+  expertAdvice?: string; // New field for diagnostic/expert context
   partName?: string;
   make?: string;
   model?: string;

@@ -1,7 +1,7 @@
 import { Product, SearchCriteria } from "../types";
 
 // Datos de prueba ampliados para cubrir búsquedas comunes
-const MOCK_INVENTORY: Product[] = [
+export const MOCK_INVENTORY: Product[] = [
   // MOTOR
   {
     id: "REP-001",
@@ -143,6 +143,10 @@ const MOCK_INVENTORY: Product[] = [
   }
 ];
 
+export const getAllProducts = (): Product[] => {
+  return MOCK_INVENTORY;
+}
+
 export const searchInventory = async (
   criteria: SearchCriteria,
   useMock: boolean,
@@ -154,6 +158,9 @@ export const searchInventory = async (
     // Simular retardo de red
     await new Promise(resolve => setTimeout(resolve, 600));
 
+    // Si la IA no encontró nada específico (búsqueda vacía), devolvemos todo para que la IA decida
+    if (!criteria.partName && !criteria.category) return MOCK_INVENTORY;
+
     // LOGICA DE BÚSQUEDA TIPO GOOGLE PARA EL MOCK
     // Unimos todos los criterios de la IA en una sola frase de búsqueda
     const query = [criteria.partName, criteria.make, criteria.model, criteria.year]
@@ -162,7 +169,7 @@ export const searchInventory = async (
       .toLowerCase()
       .normalize("NFD").replace(/[\u0300-\u036f]/g, ""); // Quitar acentos
 
-    if (!query.trim()) return [];
+    if (!query.trim()) return MOCK_INVENTORY; // Fallback to all
 
     // Dividimos en palabras (Tokens)
     const tokens = query.split(" ").filter(t => t.length > 1);

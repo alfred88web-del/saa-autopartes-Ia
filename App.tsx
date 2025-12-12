@@ -4,8 +4,8 @@ import { Chat } from './components/Chat';
 import { ProductGrid } from './components/ProductGrid';
 import { SetupModal } from './components/SetupModal';
 import { ChatMessage, Product, AppConfig } from './types';
-import { parseUserQuery, generateSummary } from './services/gemini';
-import { searchInventory } from './services/inventory';
+import { parseUserQuery, generateSummary, performSemanticSearch } from './services/gemini';
+import { searchInventory, MOCK_INVENTORY } from './services/inventory';
 
 const STORAGE_KEY = 'autopartes_config_v1';
 
@@ -14,7 +14,7 @@ export default function App() {
     {
       id: 'welcome',
       role: 'model',
-      text: '¡Hola! 👋 Soy tu asistente experto. Conmigo, encontrar y comprar el repuesto exacto es más fácil y rápido que nunca. Simplemente dime qué buscas y para qué auto, ¡y yo me encargo del resto! 🚗💨',
+      text: '¡Hola! 👋 Soy tu asistente experto. Conozco todo nuestro inventario. Dime qué necesitas o descríbeme el problema de tu auto, y buscaré la mejor solución para ti. 🚗💨',
       timestamp: new Date()
     }
   ]);
@@ -95,44 +95,63 @@ export default function App() {
     setIsProcessing(true);
     
     try {
-      // 1. Determine Intent (Chat, Search, or Agent Handoff)
-      const criteria = await parseUserQuery(text, config.googleApiKey);
-      console.log("AI Extracted Criteria:", criteria);
+      let foundProducts: Product[] = [];
+      let replyText = "";
 
-      // 2. CASE: AGENT (Wholesale, Company Info, Special Requests)
-      if (criteria.intent === 'AGENT') {
-         const replyText = criteria.conversationalReply || "Para esa información, por favor contacta a un asesor directamente.";
-         const phone = config.whatsappNumber || "5490000000000";
-         const waUrl = `https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent("Hola, tengo una consulta sobre: " + text)}`;
-
-         setMessages(prev => [...prev, {
-            id: (Date.now() + 1).toString(),
-            role: 'model',
-            text: replyText,
-            timestamp: new Date(),
-            actionLabel: "Contactar por WhatsApp",
-            actionLink: waUrl
-         }]);
-         setIsProcessing(false);
-         return; // EXIT EARLY
-      }
-
-      // 3. CASE: CHAT - Just reply, do not search DB
-      if (criteria.intent === 'CHAT') {
-        const replyText = criteria.conversationalReply || "¡Hola! ¿En qué puedo ayudarte con tu auto hoy?";
+      // STRATEGY A: SEMANTIC SEARCH (AI sees full Mock DB)
+      // This satisfies the "AI knows the database" requirement best.
+      if (config.useMockData) {
         
-        setMessages(prev => [...prev, {
-            id: (Date.now() + 1).toString(),
-            role: 'model',
-            text: replyText,
-            timestamp: new Date()
-        }]);
-        setIsProcessing(false);
-        return; // EXIT EARLY
+        const result = await performSemanticSearch(text, MOCK_INVENTORY, config.googleApiKey);
+        foundProducts = result.matches;
+        replyText = result.reply;
+
+        // If intent wasn't purely search (e.g., chat), the AI reply handles it.
+        // We still check if products were found to switch tabs.
+
+      } 
+      // STRATEGY B: REMOTE SEARCH (Legacy flow for Apps Script)
+      // We can't efficiently send a remote DB to AI, so we extract keywords -> fetch -> summarize
+      else {
+          // 1. Determine Intent
+          const criteria = await parseUserQuery(text, config.googleApiKey);
+          
+          if (criteria.intent === 'AGENT') {
+             const reply = criteria.conversationalReply || "Para esa información, contacta a un asesor.";
+             const phone = config.whatsappNumber || "5490000000000";
+             const waUrl = `https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent("Consulta: " + text)}`;
+
+             setMessages(prev => [...prev, {
+                id: (Date.now() + 1).toString(),
+                role: 'model',
+                text: reply,
+                timestamp: new Date(),
+                actionLabel: "Contactar WhatsApp",
+                actionLink: waUrl
+             }]);
+             setIsProcessing(false);
+             return; 
+          }
+
+          if (criteria.intent === 'CHAT') {
+             setMessages(prev => [...prev, {
+                id: (Date.now() + 1).toString(),
+                role: 'model',
+                text: criteria.conversationalReply || "¡Hola! ¿En qué puedo ayudarte?",
+                timestamp: new Date()
+             }]);
+             setIsProcessing(false);
+             return;
+          }
+
+          // Search Remote
+          foundProducts = await searchInventory(criteria, false, config.appsScriptUrl);
+          
+          // Generate Summary
+          replyText = await generateSummary(text, foundProducts, criteria, config.googleApiKey);
       }
 
-      // 4. CASE: SEARCH - Query Inventory
-      const foundProducts = await searchInventory(criteria, config.useMockData, config.appsScriptUrl);
+      // Update UI with results
       setProducts(foundProducts);
 
       // Auto-switch to results on mobile ONLY if products found
@@ -140,13 +159,10 @@ export default function App() {
         setTimeout(() => setActiveTab('results'), 500);
       }
 
-      // Generate context-aware summary based on DB results
-      const summaryText = await generateSummary(text, foundProducts.length, criteria, config.googleApiKey);
-
       const aiMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: summaryText,
+        text: replyText,
         timestamp: new Date()
       };
       setMessages(prev => [...prev, aiMsg]);
@@ -156,7 +172,7 @@ export default function App() {
       const errorMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: "Tuve un pequeño problema técnico. ¿Podrías repetirme qué repuesto buscas?",
+        text: "Tuve un problema técnico consultando la base de datos. Por favor, intenta de nuevo.",
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMsg]);
@@ -190,7 +206,14 @@ export default function App() {
          setMessages(prev => [...prev, {
             id: Date.now().toString(),
             role: 'system',
-            text: 'Configuración actualizada y guardada en el navegador.',
+            text: 'Configuración guardada. Usando modo remoto (Búsqueda optimizada).',
+            timestamp: new Date()
+          }]);
+    } else if (newConfig.useMockData) {
+        setMessages(prev => [...prev, {
+            id: Date.now().toString(),
+            role: 'system',
+            text: 'Modo Demo activado. La IA tiene acceso total a la base de datos local.',
             timestamp: new Date()
           }]);
     }
