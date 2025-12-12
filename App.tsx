@@ -14,7 +14,7 @@ export default function App() {
     {
       id: 'welcome',
       role: 'model',
-      text: '¡Hola! 👋 Soy tu asistente experto. Conozco todo nuestro inventario. Dime qué necesitas o descríbeme el problema de tu auto, y buscaré la mejor solución para ti. 🚗💨',
+      text: '¡Hola! 👋 Soy Carlos, tu experto en repuestos. ¿En qué puedo ayudarte hoy? Cuéntame qué auto tienes o qué problema te está dando.',
       timestamp: new Date()
     }
   ]);
@@ -58,10 +58,7 @@ export default function App() {
         
         if (parsedConfig && typeof parsedConfig === 'object') {
             setConfig(parsedConfig);
-            // Persist Magic Link config immediately
             localStorage.setItem(STORAGE_KEY, JSON.stringify(parsedConfig));
-            
-            // Clean URL to avoid re-parsing on reload
             window.history.replaceState({}, document.title, window.location.pathname);
 
             if (parsedConfig.appsScriptUrl || parsedConfig.googleApiKey) {
@@ -91,6 +88,7 @@ export default function App() {
       text,
       timestamp: new Date()
     };
+    // Update UI immediately
     setMessages(prev => [...prev, userMsg]);
     setIsProcessing(true);
     
@@ -98,22 +96,19 @@ export default function App() {
       let foundProducts: Product[] = [];
       let replyText = "";
 
-      // STRATEGY A: SEMANTIC SEARCH (AI sees full Mock DB)
-      // This satisfies the "AI knows the database" requirement best.
+      // STRATEGY A: SEMANTIC SEARCH (AI sees full Mock DB + History)
       if (config.useMockData) {
         
-        const result = await performSemanticSearch(text, MOCK_INVENTORY, config.googleApiKey);
+        // Pass the CURRENT conversation history (including the new user message we just added logic-wise)
+        const currentHistory = [...messages, userMsg];
+        
+        const result = await performSemanticSearch(text, currentHistory, MOCK_INVENTORY, config.googleApiKey);
         foundProducts = result.matches;
         replyText = result.reply;
 
-        // If intent wasn't purely search (e.g., chat), the AI reply handles it.
-        // We still check if products were found to switch tabs.
-
       } 
-      // STRATEGY B: REMOTE SEARCH (Legacy flow for Apps Script)
-      // We can't efficiently send a remote DB to AI, so we extract keywords -> fetch -> summarize
+      // STRATEGY B: REMOTE SEARCH (Legacy flow)
       else {
-          // 1. Determine Intent
           const criteria = await parseUserQuery(text, config.googleApiKey);
           
           if (criteria.intent === 'AGENT') {
@@ -144,17 +139,14 @@ export default function App() {
              return;
           }
 
-          // Search Remote
           foundProducts = await searchInventory(criteria, false, config.appsScriptUrl);
-          
-          // Generate Summary
           replyText = await generateSummary(text, foundProducts, criteria, config.googleApiKey);
       }
 
-      // Update UI with results
+      // Update Products
       setProducts(foundProducts);
 
-      // Auto-switch to results on mobile ONLY if products found
+      // Only switch tab if products were actually found (meaning the AI decided it was a search result)
       if (foundProducts.length > 0) {
         setTimeout(() => setActiveTab('results'), 500);
       }
@@ -172,7 +164,7 @@ export default function App() {
       const errorMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'model',
-        text: "Tuve un problema técnico consultando la base de datos. Por favor, intenta de nuevo.",
+        text: "Uh, disculpa. Se me colgó el sistema un segundo. ¿Me lo puedes repetir?",
         timestamp: new Date()
       };
       setMessages(prev => [...prev, errorMsg]);
@@ -191,7 +183,7 @@ export default function App() {
     const phone = config.whatsappNumber || "5490000000000"; 
     const cartSummary = cart.map(p => `- ${p.name} ($${p.price})`).join('\n');
     const total = cart.reduce((acc, p) => acc + p.price, 0).toFixed(2);
-    const message = `Hola, quiero pedir estos repuestos:\n\n${cartSummary}\n\nTotal estimado: $${total}`;
+    const message = `Hola Carlos, quiero pedir estos repuestos:\n\n${cartSummary}\n\nTotal estimado: $${total}`;
     
     const url = `https://wa.me/${phone.replace(/[^0-9]/g, '')}?text=${encodeURIComponent(message)}`;
     window.open(url, '_blank');
@@ -199,29 +191,22 @@ export default function App() {
 
   const saveConfig = (newConfig: AppConfig) => {
     setConfig(newConfig);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfig)); // Persist to LocalStorage
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(newConfig));
     setIsSettingsOpen(false);
     
-    if (newConfig.appsScriptUrl && !newConfig.useMockData) {
-         setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            role: 'system',
-            text: 'Configuración guardada. Usando modo remoto (Búsqueda optimizada).',
-            timestamp: new Date()
-          }]);
-    } else if (newConfig.useMockData) {
-        setMessages(prev => [...prev, {
-            id: Date.now().toString(),
-            role: 'system',
-            text: 'Modo Demo activado. La IA tiene acceso total a la base de datos local.',
-            timestamp: new Date()
-          }]);
-    }
+    setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        role: 'system',
+        text: newConfig.useMockData 
+            ? 'Modo Demo: Activado. Soy Carlos y tengo acceso al stock local.' 
+            : 'Modo Remoto: Activado. Conectado a base de datos externa.',
+        timestamp: new Date()
+    }]);
   };
 
   return (
     <div className="flex flex-col h-[100dvh] overflow-hidden font-sans bg-black">
-      {/* Header - Always visible but smaller on mobile */}
+      {/* Header */}
       <div className="flex-none">
         <Header 
           onOpenSettings={() => setIsSettingsOpen(true)} 
@@ -230,7 +215,7 @@ export default function App() {
         />
       </div>
 
-      {/* Main Content Area - Full height flexible */}
+      {/* Main Content */}
       <main className="flex-1 flex flex-col md:flex-row overflow-hidden relative w-full max-w-[1920px] mx-auto">
         
         {/* Chat Section */}
@@ -256,7 +241,7 @@ export default function App() {
             ${activeTab === 'results' ? 'translate-x-0' : 'translate-x-full md:translate-x-0'}
         `}>
           <div className="h-full overflow-y-auto custom-scrollbar bg-gradient-to-br from-black/40 to-slate-900/40 backdrop-blur-sm">
-             <div className="p-4 md:p-8 pb-24 md:pb-8"> {/* Extra padding bottom for mobile nav */}
+             <div className="p-4 md:p-8 pb-24 md:pb-8"> 
                 <div className="flex items-center justify-between mb-4 md:mb-6 border-b border-white/10 pb-4 sticky top-0 bg-black/40 backdrop-blur-md z-10 -mx-4 px-4 md:mx-0 md:px-0">
                     <h2 className="text-xl md:text-2xl font-bold text-white flex items-center gap-2">
                       <span className="md:hidden text-blue-400" onClick={() => setActiveTab('chat')}>
